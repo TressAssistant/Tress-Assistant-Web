@@ -1,0 +1,133 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{bm}
+\usepackage{physics}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{mathtools}
+\setlength{\parskip}{0.8em}
+
+\begin{document}
+
+\title{Formal Explanation of Hair Color Blending Formulas (Revised for Realism)}
+\author{}
+\date{}
+\maketitle
+
+\section*{Introduction}
+This document presents a mathematically rigorous model for simulating the blending of natural and artificial (dyed) hair colors. The model reflects the physical limitations of hair dyeing: lightness (brightness) of natural hair strongly limits the achievable lightness after dyeing, while hue and saturation are more blendable, especially for light hair or yellow-based dyes. The formulation is suitable for computer graphics implementations (e.g., OpenGL, GLSL).
+
+\section*{Variables and Ranges}
+Let:
+\begin{itemize}
+    \item \textbf{Natural hair color in HSL:} \\ $N = (N_h, N_s, N_l)$
+    \begin{itemize}
+        \item $N_h$: Hue in radians, $[0, 2\pi)$
+        \item $N_s$: Saturation, $[0, 1]$
+        \item $N_l$: Lightness, $[0, 1]$
+    \end{itemize}
+    \item \textbf{Natural hair color in RGB:} \\ $(N_r, N_g, N_b)$ from HSL$\to$RGB, each $[0, 1]$
+    \item \textbf{Natural brightness:} \\ $NB = 0.299 N_r + 0.587 N_g + 0.114 N_b$
+    \item \textbf{Artificial color in HSL:} \\ $A = (A_h, A_s, A_l)$, same ranges as above
+    \item \textbf{Final blended color in HSL:} \\ $F = (F_h, F_s, F_l)$
+\end{itemize}
+
+\section*{Blending Equations}
+If the hair is bleached (i.e., \texttt{bleached = true}), the final blended color is simply the artificial color:
+\(
+F = A
+\)
+
+Otherwise, the final blended color is a weighted average of natural and artificial HSL components, but with \textbf{distinct blending factors for hue, saturation, and lightness}:
+\begin{align*}
+F_h &= \alpha \cdot A_h + (1 - \alpha) \cdot N_h \\
+F_s &= \beta \cdot A_s + (1 - \beta) \cdot N_s \\
+F_l &= \gamma \cdot A_l + (1 - \gamma) \cdot N_l
+\end{align*}
+Where
+\begin{itemize}
+    \item \texttt{bleached}: boolean, true if hair is bleached
+    \item $\alpha$: blending factor for hue
+    \item $\beta$: blending factor for saturation
+    \item $\gamma$: blending factor for lightness (special constraints, see below)
+\end{itemize}
+
+% Special handling for achromatic colors
+\begin{itemize}
+    \item \textbf{Special handling for achromatic colors (white, black, gray):}
+    \begin{itemize}
+        \item If both natural and artificial saturation are zero (i.e., both are achromatic), set the final hue to any value (e.g., 0 or the natural hue), as it will not affect the RGB result. Do not perform hue blending in this case to avoid NaN.
+        \item If only one color is achromatic, use the hue of the chromatic color for blending.
+    \end{itemize}
+\end{itemize}
+
+\begin{align*}
+F_h &= \begin{cases}
+  \text{any value (e.g., } N_h \text{)}, & \text{if } N_s = 0 \text{ and } A_s = 0 \\
+  A_h, & \text{if } A_s > 0 \text{ and } N_s = 0 \\
+  N_h, & \text{if } N_s > 0 \text{ and } A_s = 0 \\
+  \alpha \cdot A_h + (1 - \alpha) \cdot N_h, & \text{otherwise}
+\end{cases} \\
+F_s &= \beta \cdot A_s + (1 - \beta) \cdot N_s \\
+F_l &= \gamma \cdot A_l + (1 - \gamma) \cdot N_l \\
+\\
+\alpha &= S(NB) + (1 - S(NB)) \left( \frac{1 + \cos(A_h - \frac{\pi}{3})}{2} \right)^p \\
+\gamma &= S_{\text{dark}}(A_l - N_l) + (1 - S_{\text{dark}}(A_l - N_l)) NB^q
+\end{align*}
+where
+\(
+S(NB) = \frac{1}{1 + e^{-k(NB - c)}}
+\)
+\(
+S_{\text{dark}}(x) = \frac{1}{1 + e^{d x}} \quad (d \gg 1)
+\)
+
+\section*{Parameter Recommendations}
+\begin{itemize}
+    \item $p = 2$: sharp proximity for yellow range
+    \item $k = 5$, $c = 0.5$: sigmoid transition at mid-brightness
+    \item $q = 1$ (linear) or $2$ (quadratic, more realistic for lightness anchoring)
+    \item $d = 20$: steepness for darkening transition
+    \item All HSL values normalized to $[0,1]$ except hue in $[0, 2\pi)$
+\end{itemize}
+
+\section*{Practical Effects}
+\begin{itemize}
+    \item \textbf{Dark hair}:
+    \begin{itemize}
+        \item Final lightness stays low, regardless of dye lightness.
+        \item Only yellow-based dyes shift hue/saturation noticeably.
+    \end{itemize}
+    \item \textbf{Light hair}:
+    \begin{itemize}
+        \item Artificial color can smoothly darken hair (e.g., blonde to black becomes black), with no abrupt transition.
+        \item Artificial color cannot lighten hair beyond its natural brightness.
+    \end{itemize}
+    \item \textbf{Intermediate hair}:
+    \begin{itemize}
+        \item Gradual, nonlinear, and smooth transition in dominance.
+    \end{itemize}
+\end{itemize}
+
+\section*{Implementation Notes}
+\begin{itemize}
+    \item Always handle hue blending circularly (e.g., via trigonometric interpolation or modular arithmetic).
+    \item \textbf{For achromatic colors (saturation = 0), skip hue blending and set hue to any value (e.g., 0 or the natural hue) to avoid NaN.}
+    \item For graphics code, ensure all variables are clamped to valid ranges after computation.
+\end{itemize}
+
+\section*{Summary}
+This revised model ensures realistic simulation:
+\begin{itemize}
+    \item \textbf{Hue and saturation} can shift with dye, especially for compatible colors and light hair.
+    \item \textbf{Lightness} is strongly anchored to the natural base, reflecting real-world dye limitations.
+    \item \textbf{Nonlinear transitions} ensure that extreme results (like light yellow on black hair) are impossible.
+\end{itemize}
+This model is robust for digital hair color preview and simulation applications.
+
+\end{document}

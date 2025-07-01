@@ -1,0 +1,1 @@
+export { defeault } from './RenderingTab';

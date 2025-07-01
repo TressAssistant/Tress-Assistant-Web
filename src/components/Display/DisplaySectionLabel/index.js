@@ -1,0 +1,1 @@
+export { default } from './DisplaySectionLabel.jsx';
